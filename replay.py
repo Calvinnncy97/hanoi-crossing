@@ -29,8 +29,9 @@ import argparse
 import json
 import sys
 
-from engine import Game, Kind, Side
+from engine import Game, Side
 from players import ReplayPlayer
+from runner import final_state, run_turns
 
 
 def replay(record: dict) -> dict:
@@ -52,24 +53,13 @@ def replay(record: dict) -> dict:
     players = {side: ReplayPlayer(side, moves.get(side.value, [])) for side in Side}
 
     game = Game(n)
-    log = []
-    for number, side in enumerate(turns, start=1):
-        if game.winner is not None:
-            break
-        action = players[side].choose(game.legal_actions(side))
-        legal = game.step(side, action)
-        move = action.kind.value if action.kind is Kind.SKIP else f"{action.kind.value} {action.pole.value}"
-        log.append({"turn": number, "side": side.value, "move": move, "legal": legal})
-
+    log = run_turns(game, players, turns)
     return {
         "winner": game.winner.value if game.winner else None,
         "turns_played": len(log),
         "turns_ignored": len(turns) - len(log),
         "log": log,
-        "final": {
-            "poles": {pole.value: [d.size for d in tower] for pole, tower in game.table.board.towers.items()},
-            "hands": {side.value: (disk.size if disk else None) for side, disk in game.table.hands.items()},
-        },
+        "final": final_state(game),
     }
 
 

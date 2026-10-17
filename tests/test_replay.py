@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from engine import Action, Kind, Pole, Side
+from engine import Action, Game, Kind, Pole, Side
 from players import ReplayPlayer, parse_action
 from replay import main, replay
 
@@ -36,9 +36,10 @@ class TestReplayPlayer:
     def test_plays_moves_then_skips(self):
         """After the recorded moves run out it skips."""
         player = ReplayPlayer(Side.A, ["lift 1", "place 3"])
-        assert player.choose([]) == Action(Kind.LIFT, Pole.A1)
-        assert player.choose([]) == Action(Kind.PLACE, Pole.A3)
-        assert player.choose([]) == Action(Kind.SKIP)
+        view = Game(1).observe(Side.A)
+        assert player.choose(view, []) == Action(Kind.LIFT, Pole.A1)
+        assert player.choose(view, []) == Action(Kind.PLACE, Pole.A3)
+        assert player.choose(view, []) == Action(Kind.SKIP)
 
     def test_bad_move_fails_up_front(self):
         """A typo is reported when the player is created."""

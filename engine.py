@@ -240,11 +240,12 @@ class Player:
 
     This is the interface every kind of player implements: a replay of
     recorded moves, a random player, or later an RL agent. Subclasses
-    override `choose`. The caller passes the chosen action to `Game.step`.
+    override `choose`. The caller gets the inputs from `Game.observe` and
+    `Game.legal_actions`, and passes the chosen action to `Game.step`.
     """
 
     side: Side
 
-    def choose(self, legal: list[Action]) -> Action:
-        """Pick an action, given the actions that are legal right now."""
+    def choose(self, view: Observation, legal: list[Action]) -> Action:
+        """Pick an action, given what this side can see and the actions legal right now."""
         raise NotImplementedError

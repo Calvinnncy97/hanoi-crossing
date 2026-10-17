@@ -18,7 +18,7 @@ from rich.console import Console, Group
 from rich.panel import Panel
 from rich.text import Text
 
-from engine import VISIBLE, Action, Disk, Game, Kind, Player, Pole, Side
+from engine import VISIBLE, Action, Disk, Game, Kind, Observation, Player, Pole, Side
 from players import RandomPlayer
 
 console = Console()
@@ -57,15 +57,16 @@ def centered(content: Text, width: int) -> Text:
     return Text.assemble(" " * left, content, " " * (width - len(content) - left))
 
 
-def render(game: Game, side: Side, title: str) -> Panel:
-    """A panel with the three towers `side` can see and the disk in its hand.
+def render(view: Observation, title: str) -> Panel:
+    """A panel with the three towers in `view` and the disk in hand.
 
-    Every tower is drawn tall enough to hold all disks in the game, so the
-    picture keeps the same size from turn to turn.
+    It draws only from the observation, so it cannot show anything the
+    side is not allowed to see. Every tower is drawn tall enough to hold
+    all disks in the game, so the picture keeps the same size every turn.
     """
-    names = pole_names(side)
-    towers = [game.table.board.towers[pole] for pole in names]
-    height = 2 * game.n
+    names = list(view.poles)
+    towers = [[Disk(size) for size in view.poles[name]] for name in names]
+    height = 2 * view.n
     width = max(2 * height + 5, 17)
     rows = []
     for level in range(height - 1, -1, -1):
@@ -76,10 +77,10 @@ def render(game: Game, side: Side, title: str) -> Panel:
         rows.append(Text.assemble(*(centered(cell, width) for cell in cells)))
     base = "─" * (width // 2 - 1) + "┴" + "─" * (width - width // 2)
     rows.append(Text.assemble(*(centered(Text(base[: width - 2], style="grey50"), width) for _ in names)))
-    labels = [f"pole {name}" + (" (shared)" if name == "2" else "") for name in names.values()]
+    labels = [f"pole {name}" + (" (shared)" if name == "2" else "") for name in names]
     rows.append(Text.assemble(*(centered(Text(label, style="bold"), width) for label in labels)))
-    held = game.table.hands[side]
-    hand = Text.assemble("Hand: ", disk_text(held) if held else Text("empty", style="grey50"))
+    held = Text("empty", style="grey50") if view.hand is None else disk_text(Disk(view.hand))
+    hand = Text.assemble("Hand: ", held)
     return Panel(
         Group(Text(), *rows, Text(), hand),
         title=title,
@@ -92,7 +93,7 @@ def render(game: Game, side: Side, title: str) -> Panel:
 class HumanPlayer(Player):
     """Asks the person at the terminal to pick from the legal actions."""
 
-    def choose(self, legal: list[Action]) -> Action:
+    def choose(self, view: Observation, legal: list[Action]) -> Action:
         """Show the legal actions as an arrow-key menu and return the pick.
 
         Exits the program if the person cancels with Ctrl-C.
@@ -115,8 +116,9 @@ def play(game: Game, human: HumanPlayer, opponent: Player) -> Side:
     while game.winner is None:
         player = human if turn % 2 else opponent
         if player is human:
-            console.print(render(game, human.side, f"Turn {turn} · your view"))
-        game.step(player.side, player.choose(game.legal_actions(player.side)))
+            console.print(render(game.observe(human.side), f"Turn {turn} · your view"))
+        view = game.observe(player.side)
+        game.step(player.side, player.choose(view, game.legal_actions(player.side)))
         if player is opponent:
             console.print(f"[grey50]Turn {turn}: {opponent.side.value} took its turn.[/]\n")
         turn += 1
@@ -136,7 +138,7 @@ def main(argv: list[str] | None = None) -> None:
     console.rule("[bold]Hanoi Crossing")
     console.print("You are [bold dodger_blue2]A[/]. Win by getting every disk you can see onto your pole 3, with an empty hand.\n")
     winner = play(game, HumanPlayer(Side.A), RandomPlayer(Side.B, args.seed))
-    console.print(render(game, Side.A, "Final view"))
+    console.print(render(game.observe(Side.A), "Final view"))
     console.print("\n[bold green]You win![/]" if winner is Side.A else "\n[bold red]B wins.[/]")
 
 

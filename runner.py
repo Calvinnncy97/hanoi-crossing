@@ -1,8 +1,8 @@
 """Shared game loop for the non-interactive frontends (replay and random play).
 
 The loop is the same however the moves are chosen: for each side in the
-turn order, ask that side's `Player` to choose from the legal actions,
-then pass the choice to `Game.step`.
+turn order, give that side's `Player` its view and the legal actions,
+then pass its choice to `Game.step`.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ def run_turns(game: Game, players: dict[Side, Player], turns: Iterable[Side]) ->
     for number, side in enumerate(turns, start=1):
         if game.winner is not None:
             break
-        action = players[side].choose(game.legal_actions(side))
+        action = players[side].choose(game.observe(side), game.legal_actions(side))
         legal = game.step(side, action)
         log.append({"turn": number, "side": side.value, "move": move_text(action), "legal": legal})
     return log

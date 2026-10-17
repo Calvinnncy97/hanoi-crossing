@@ -393,21 +393,22 @@ class TestPlayer:
     def test_base_choose_not_implemented(self):
         """The base class has no strategy of its own."""
         with pytest.raises(NotImplementedError):
-            Player(Side.A).choose([SKIP])
+            Player(Side.A).choose(Game(1).observe(Side.A), [SKIP])
 
     def test_subclass_drives_a_game(self):
-        """A subclass picks from the legal actions and the caller steps the game."""
+        """A subclass gets the view and legal actions, and the caller steps the game."""
 
         class LastLegal(Player):
             """Always picks the last legal action."""
 
-            def choose(self, legal):
+            def choose(self, view, legal):
                 """Pick the last legal action."""
+                assert view.side is self.side
                 return legal[-1]
 
         game = Game(1)
         player = LastLegal(Side.A)
-        action = player.choose(game.legal_actions(player.side))
+        action = player.choose(game.observe(player.side), game.legal_actions(player.side))
         assert action == lift(Pole.A1)
         assert game.step(player.side, action)
         assert game.table.hands[Side.A] == Disk(1)
@@ -430,12 +431,14 @@ class TestRandomPlayer:
             legal = game.legal_actions(Side.B)
             if not legal:
                 break
-            action = player.choose(legal)
+            action = player.choose(game.observe(Side.B), legal)
             assert action in legal
             game.step(Side.B, action)
 
     def test_same_seed_same_choices(self):
         """Two players with the same seed make the same picks."""
-        legal = Game(1).legal_actions(Side.A)
+        game = Game(1)
+        view, legal = game.observe(Side.A), game.legal_actions(Side.A)
         first, second = RandomPlayer(Side.A, seed=7), RandomPlayer(Side.A, seed=7)
-        assert [first.choose(legal) for _ in range(20)] == [second.choose(legal) for _ in range(20)]
+        picks = [first.choose(view, legal) for _ in range(20)]
+        assert picks == [second.choose(view, legal) for _ in range(20)]

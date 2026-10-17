@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 
-from engine import VISIBLE, Action, Kind, Player, Side
+from engine import VISIBLE, Action, Kind, Observation, Player, Side
 
 
 class RandomPlayer(Player):
@@ -18,8 +18,8 @@ class RandomPlayer(Player):
         super().__init__(side)
         self.rng = random.Random(seed)
 
-    def choose(self, legal: list[Action]) -> Action:
-        """Pick one of `legal` at random."""
+    def choose(self, view: Observation, legal: list[Action]) -> Action:
+        """Pick one of `legal` at random; the view is not needed."""
         return self.rng.choice(legal)
 
 
@@ -50,8 +50,8 @@ class ReplayPlayer(Player):
         self.moves = [parse_action(text, side) for text in moves]
         self.played = 0
 
-    def choose(self, legal: list[Action]) -> Action:
-        """The next recorded move, or skip once they run out."""
+    def choose(self, view: Observation, legal: list[Action]) -> Action:
+        """The next recorded move, or skip once they run out. The inputs are not needed."""
         if self.played >= len(self.moves):
             return Action(Kind.SKIP)
         self.played += 1

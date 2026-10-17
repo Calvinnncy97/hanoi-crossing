@@ -12,7 +12,8 @@ class TestTurnOrder:
 
     def test_alternate_starts_with_a(self):
         """Alternate order is A, B, A, B, ..."""
-        assert list(turn_order("alternate", random.Random(0), 4)) == [Side.A, Side.B, Side.A, Side.B]
+        sides = list(turn_order("alternate", random.Random(0), 4))
+        assert sides == [Side.A, Side.B, Side.A, Side.B]
 
     def test_random_uses_both_sides(self):
         """Random order picks each side at some point and stops at the limit."""

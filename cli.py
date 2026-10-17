@@ -1,10 +1,11 @@
-"""Play Hanoi Crossing in the terminal as side A.
+"""Play Hanoi Crossing in the terminal as side A against a random side B.
 
 The screen shows only what A can see: A's poles 1 and 3, the shared pole 2
 and A's hand, drawn as towers with Rich. Pick a move with the arrow keys
-and Enter; Ctrl-C quits.
+and Enter; Ctrl-C quits. Turns alternate A, B, A, ... B's moves on its own
+poles stay hidden; only their effect on the shared pole shows.
 
-Usage: uv run cli.py [--n DISKS]
+Usage: uv run cli.py [--n DISKS] [--seed SEED]
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from engine import VISIBLE, Action, Disk, Game, Kind, Player, Pole, Side
+from players import RandomPlayer
 
 console = Console()
 
@@ -103,20 +105,29 @@ class HumanPlayer(Player):
         return action
 
 
-def play(game: Game, player: Player) -> Side:
-    """Let `player` take every turn until someone wins."""
+def play(game: Game, human: HumanPlayer, opponent: Player) -> Side:
+    """Alternate turns, human first, until someone wins.
+
+    The board is shown before each of the human's turns. The opponent's
+    move is not described, since it may be on poles the human cannot see.
+    """
     turn = 1
     while game.winner is None:
-        console.print(render(game, player.side, f"Turn {turn} · your view"))
+        player = human if turn % 2 else opponent
+        if player is human:
+            console.print(render(game, human.side, f"Turn {turn} · your view"))
         game.step(player.side, player.choose(game.legal_actions(player.side)))
+        if player is opponent:
+            console.print(f"[grey50]Turn {turn}: {opponent.side.value} took its turn.[/]\n")
         turn += 1
     return game.winner
 
 
 def main(argv: list[str] | None = None) -> None:
     """Parse arguments, play one game and announce the winner."""
-    parser = argparse.ArgumentParser(description="Play Hanoi Crossing as side A.")
+    parser = argparse.ArgumentParser(description="Play Hanoi Crossing as side A against a random side B.")
     parser.add_argument("--n", type=int, default=3, help="disks per player (default 3)")
+    parser.add_argument("--seed", type=int, default=None, help="seed for B's random moves")
     args = parser.parse_args(argv)
     if args.n < 1:
         parser.error("--n must be at least 1")
@@ -124,9 +135,9 @@ def main(argv: list[str] | None = None) -> None:
     game = Game(args.n)
     console.rule("[bold]Hanoi Crossing")
     console.print("You are [bold dodger_blue2]A[/]. Win by getting every disk you can see onto your pole 3, with an empty hand.\n")
-    winner = play(game, HumanPlayer(Side.A))
+    winner = play(game, HumanPlayer(Side.A), RandomPlayer(Side.B, args.seed))
     console.print(render(game, Side.A, "Final view"))
-    console.print(f"\n[bold green]{winner.value} wins![/]")
+    console.print("\n[bold green]You win![/]" if winner is Side.A else "\n[bold red]B wins.[/]")
 
 
 if __name__ == "__main__":

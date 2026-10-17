@@ -5,6 +5,7 @@ import dataclasses
 import pytest
 
 from engine import VISIBLE, Action, Board, Disk, Game, Kind, Player, Pole, Side, Table
+from players import RandomPlayer
 
 
 class TestDisk:
@@ -370,3 +371,25 @@ def test_visible_poles():
     """Each side sees its own poles 1 and 3 plus the shared pole, in that order."""
     assert VISIBLE[Side.A] == (Pole.A1, Pole.SHARED, Pole.A3)
     assert VISIBLE[Side.B] == (Pole.B1, Pole.SHARED, Pole.B3)
+
+
+class TestRandomPlayer:
+    """`RandomPlayer` picks among the legal actions."""
+
+    def test_always_picks_a_legal_action(self):
+        """Every pick is one of the actions offered."""
+        game = Game(2)
+        player = RandomPlayer(Side.B, seed=0)
+        for _ in range(200):
+            legal = game.legal_actions(Side.B)
+            if not legal:
+                break
+            action = player.choose(legal)
+            assert action in legal
+            game.step(Side.B, action)
+
+    def test_same_seed_same_choices(self):
+        """Two players with the same seed make the same picks."""
+        legal = Game(1).legal_actions(Side.A)
+        first, second = RandomPlayer(Side.A, seed=7), RandomPlayer(Side.A, seed=7)
+        assert [first.choose(legal) for _ in range(20)] == [second.choose(legal) for _ in range(20)]

@@ -8,8 +8,10 @@ Data model:
   It moves a disk between a tower and a hand when asked, without checking
   any rules. Because the towers and hands live together here, every disk
   is always in exactly one place.
-- A `Player` makes the actions (lift, place, skip). It checks the rules,
-  then asks the table to move the disk.
+- The `Game` sets up the table, checks whether a move is legal, applies
+  it and checks for a win.
+- A `Player` makes the actions (lift, place, skip) for one side, through
+  the game.
 """
 
 from __future__ import annotations
@@ -79,7 +81,7 @@ class Table:
     """The board plus both players' hands.
 
     It only manages state. `to_hand` and `to_pole` are the only ways a disk
-    moves between a tower and a hand. Neither checks game rules; `Player`
+    moves between a tower and a hand. Neither checks game rules; `Game`
     does that first.
     """
 
@@ -110,44 +112,116 @@ VISIBLE: dict[Side, tuple[Pole, ...]] = {
     Side.A: (Pole.A1, Pole.SHARED, Pole.A3),
     Side.B: (Pole.B1, Pole.SHARED, Pole.B3),
 }
-"""The poles each side can see and act on, as poles 1, 2 and 3."""
+"""The poles each side can see and act on, in order: pole 1, pole 2, pole 3."""
+
+
+class Kind(str, Enum):
+    """The three kinds of action."""
+
+    LIFT = "lift"
+    PLACE = "place"
+    SKIP = "skip"
+
+
+@dataclass(frozen=True)
+class Action:
+    """One action: a kind, plus the target pole for lift and place."""
+
+    kind: Kind
+    pole: Pole | None = None
+
+
+class Game:
+    """One game: sets up the table, checks legal moves and detects a win.
+
+    The game does not track whose turn it is. Every call to `step` names
+    the acting side, so the caller decides the turn order.
+    """
+
+    def __init__(self, n: int) -> None:
+        """Set up a table where each side has `n` disks on its pole 1, largest at the bottom."""
+        self.n = n
+        self.table = Table()
+        self.winner: Side | None = None
+        for size in range(2 * n, 0, -1):
+            disk = Disk(size)
+            self.table.board.push(VISIBLE[disk.owner][0], disk)
+
+    def is_legal(self, side: Side, action: Action) -> bool:
+        """True if `side` may take `action` now.
+
+        Nothing is legal once the game is over. Skip is otherwise always
+        legal. Lift needs a visible, non-empty pole and an empty hand.
+        Place needs a held disk and a visible pole that is empty or topped
+        by a larger disk.
+        """
+        if self.winner is not None:
+            return False
+        if action.kind is Kind.SKIP:
+            return True
+        if action.pole not in VISIBLE[side]:
+            return False
+        held = self.table.hands[side]
+        top = self.table.board.top(action.pole)
+        if action.kind is Kind.LIFT:
+            return held is None and top is not None
+        return held is not None and (top is None or top.size > held.size)
+
+    def legal_actions(self, side: Side) -> list[Action]:
+        """Every action `side` may take now."""
+        candidates = [Action(Kind.SKIP)]
+        candidates += [Action(kind, pole) for kind in (Kind.LIFT, Kind.PLACE) for pole in VISIBLE[side]]
+        return [a for a in candidates if self.is_legal(side, a)]
+
+    def has_won(self, side: Side) -> bool:
+        """True if `side`'s hand, pole 1 and pole 2 are empty and pole 3 has disks."""
+        pole1, pole2, pole3 = VISIBLE[side]
+        board = self.table.board
+        return (
+            self.table.hands[side] is None
+            and board.top(pole1) is None
+            and board.top(pole2) is None
+            and board.top(pole3) is not None
+        )
+
+    def step(self, side: Side, action: Action) -> bool:
+        """Apply `action` for `side` and return whether it was legal.
+
+        An illegal action changes nothing; the turn is simply wasted. After
+        a legal action both sides are checked for a win, the actor first,
+        because an action can also complete the other side's win (for
+        example, lifting their disk off the shared pole).
+        """
+        if not self.is_legal(side, action):
+            return False
+        if action.kind is Kind.LIFT:
+            self.table.to_hand(side, action.pole)
+        elif action.kind is Kind.PLACE:
+            self.table.to_pole(side, action.pole)
+        other = Side.B if side is Side.A else Side.A
+        self.winner = next((s for s in (side, other) if self.has_won(s)), None)
+        return True
 
 
 @dataclass
 class Player:
-    """One player acting on a shared table.
+    """One side's way of acting in a game.
 
-    Each action checks the rules first. An illegal action changes nothing
-    and returns False, so the caller can treat the turn as wasted.
+    Each action goes through `Game.step`, so rules and the win check
+    always apply. Returns False when the action was illegal.
     """
 
     side: Side
-    table: Table
-
-    @property
-    def hand(self) -> Disk | None:
-        """The disk this player holds, if any."""
-        return self.table.hands[self.side]
+    game: Game
 
     def lift(self, pole: Pole) -> bool:
-        """Lift the top disk of a visible `pole` into an empty hand."""
-        if pole not in VISIBLE[self.side] or self.hand is not None:
-            return False
-        if self.table.board.top(pole) is None:
-            return False
-        self.table.to_hand(self.side, pole)
-        return True
+        """Lift the top disk of `pole` into this player's hand."""
+        return self.game.step(self.side, Action(Kind.LIFT, pole))
 
     def place(self, pole: Pole) -> bool:
-        """Place the held disk on a visible `pole` that is empty or topped by a larger disk."""
-        if pole not in VISIBLE[self.side] or self.hand is None:
-            return False
-        top = self.table.board.top(pole)
-        if top is not None and top.size < self.hand.size:
-            return False
-        self.table.to_pole(self.side, pole)
-        return True
+        """Place the held disk onto `pole`."""
+        return self.game.step(self.side, Action(Kind.PLACE, pole))
 
     def skip(self) -> bool:
-        """Do nothing. Always legal."""
-        return True
+        """Do nothing this turn."""
+        return self.game.step(self.side, Action(Kind.SKIP))

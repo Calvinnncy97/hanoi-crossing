@@ -4,7 +4,19 @@ import dataclasses
 
 import pytest
 
-from engine import VISIBLE, Action, Board, Disk, Game, Kind, Player, Pole, Side, Table
+from engine import (
+    VISIBLE,
+    Action,
+    Board,
+    Disk,
+    Game,
+    Kind,
+    Player,
+    Pole,
+    Side,
+    Table,
+    action_space,
+)
 from players import RandomPlayer
 
 
@@ -148,6 +160,24 @@ def place(pole: Pole) -> Action:
 SKIP = Action(Kind.SKIP)
 
 
+class TestActionSpace:
+    """`action_space` numbers the actions the same way for both sides."""
+
+    def test_seven_actions_in_fixed_order(self):
+        """Skip, then lift 1-3, then place 1-3, with poles from A's view."""
+        assert action_space(Side.A) == (
+            SKIP,
+            lift(Pole.A1), lift(Pole.SHARED), lift(Pole.A3),
+            place(Pole.A1), place(Pole.SHARED), place(Pole.A3),
+        )
+
+    def test_same_number_same_move_for_both_sides(self):
+        """Number 1 is "lift from my pole 1" for A and for B."""
+        assert action_space(Side.A)[1] == lift(Pole.A1)
+        assert action_space(Side.B)[1] == lift(Pole.B1)
+        assert action_space(Side.A)[5] == action_space(Side.B)[5] == place(Pole.SHARED)
+
+
 class TestGameSetup:
     """`Game.__init__` builds the starting table."""
 
@@ -221,6 +251,23 @@ class TestGameLegality:
         assert game.winner is Side.A
         assert game.legal_actions(Side.A) == []
         assert game.legal_actions(Side.B) == []
+
+    def test_mask_matches_legal_actions(self):
+        """The mask flags exactly the actions `legal_actions` lists."""
+        game = Game(2)
+        assert game.legal_mask(Side.A) == [True, True, False, False, False, False, False]
+        game.step(Side.A, lift(Pole.A1))
+        for side in Side:
+            space = action_space(side)
+            flagged = [a for a, ok in zip(space, game.legal_mask(side)) if ok]
+            assert flagged == game.legal_actions(side)
+
+    def test_mask_all_false_after_win(self):
+        """Once the game is over, nothing is flagged."""
+        game = Game(1)
+        game.step(Side.A, lift(Pole.A1))
+        game.step(Side.A, place(Pole.A3))
+        assert not any(game.legal_mask(Side.B))
 
     def test_legal_actions_are_all_legal(self):
         """Every action listed by `legal_actions` passes `is_legal`."""

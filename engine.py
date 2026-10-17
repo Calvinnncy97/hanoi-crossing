@@ -130,6 +130,21 @@ class Action:
     pole: Pole | None = None
 
 
+def action_space(side: Side) -> tuple[Action, ...]:
+    """Every action `side` can name, in a fixed order: skip, lift 1-3, place 1-3.
+
+    Poles follow `VISIBLE`, so position i means the same move from each
+    side's own view. The position is the action's number, for agents such
+    as RL policies that work with integers.
+    """
+    poles = VISIBLE[side]
+    return (
+        Action(Kind.SKIP),
+        *(Action(Kind.LIFT, pole) for pole in poles),
+        *(Action(Kind.PLACE, pole) for pole in poles),
+    )
+
+
 @dataclass(frozen=True)
 class Observation:
     """What one side is allowed to see.
@@ -210,10 +225,12 @@ class Game:
         return self.illegal_reason(side, action) is None
 
     def legal_actions(self, side: Side) -> list[Action]:
-        """Every action `side` may take now."""
-        candidates = [Action(Kind.SKIP)]
-        candidates += [Action(kind, pole) for kind in (Kind.LIFT, Kind.PLACE) for pole in VISIBLE[side]]
-        return [a for a in candidates if self.is_legal(side, a)]
+        """Every action `side` may take now, in `action_space` order."""
+        return [a for a in action_space(side) if self.is_legal(side, a)]
+
+    def legal_mask(self, side: Side) -> list[bool]:
+        """One flag per entry of `action_space(side)`: True where that action is legal now."""
+        return [self.is_legal(side, a) for a in action_space(side)]
 
     def has_won(self, side: Side) -> bool:
         """True if `side`'s hand, pole 1 and pole 2 are empty and pole 3 has disks."""

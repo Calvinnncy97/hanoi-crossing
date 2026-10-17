@@ -1,7 +1,7 @@
 [project]
 name = "hanoi-crossing"
 version = "0.1.0"
-description = "Add your description here"
+description = "Two-player, hidden-information Tower of Hanoi engine with replay, random-play and interactive CLI frontends"
 readme = "README.md"
 authors = [
     { name = "Calvinn Ng", email = "calvinnncy97@gmail.com" }

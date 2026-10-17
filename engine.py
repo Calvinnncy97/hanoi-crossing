@@ -130,6 +130,24 @@ class Action:
     pole: Pole | None = None
 
 
+@dataclass(frozen=True)
+class Observation:
+    """What one side is allowed to see.
+
+    `poles` maps the side's own pole names ("1", "2" shared, "3") to the
+    disk sizes on them, bottom to top. `hand` is the size of the held disk,
+    or None. The other side's poles 1 and 3 and its hand are never
+    included. Whose disk is whose follows from its size: odd is A, even
+    is B.
+    """
+
+    side: Side
+    n: int
+    poles: dict[str, tuple[int, ...]]
+    hand: int | None
+    winner: Side | None
+
+
 class Game:
     """One game: sets up the table, checks legal moves and detects a win.
 
@@ -181,6 +199,20 @@ class Game:
             and board.top(pole1) is None
             and board.top(pole2) is None
             and board.top(pole3) is not None
+        )
+
+    def observe(self, side: Side) -> Observation:
+        """The part of the game `side` is allowed to see."""
+        held = self.table.hands[side]
+        return Observation(
+            side=side,
+            n=self.n,
+            poles={
+                str(i): tuple(d.size for d in self.table.board.towers[pole])
+                for i, pole in enumerate(VISIBLE[side], start=1)
+            },
+            hand=held.size if held else None,
+            winner=self.winner,
         )
 
     def step(self, side: Side, action: Action) -> bool:

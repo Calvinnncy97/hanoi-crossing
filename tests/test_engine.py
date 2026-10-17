@@ -341,6 +341,52 @@ class TestGameHasWon:
         assert not game.has_won(Side.A)
 
 
+class TestGameObserve:
+    """`Game.observe` shows a side only what it may see."""
+
+    def test_start(self):
+        """At the start a side sees its own disks on pole 1 and nothing else."""
+        view = Game(2).observe(Side.B)
+        assert view.side is Side.B
+        assert view.n == 2
+        assert view.poles == {"1": (4, 2), "2": (), "3": ()}
+        assert view.hand is None
+        assert view.winner is None
+
+    def test_poles_named_from_own_view(self):
+        """Each side calls its own poles 1 and 3, and the shared pole 2."""
+        game = Game(1)
+        game.step(Side.A, lift(Pole.A1))
+        game.step(Side.A, place(Pole.A3))
+        assert game.observe(Side.A).poles["3"] == (1,)
+        assert game.observe(Side.B).poles["3"] == ()
+
+    def test_hides_other_sides_private_poles_and_hand(self):
+        """B's private poles and hand never show up in A's view."""
+        game = Game(1)
+        game.step(Side.B, lift(Pole.B1))
+        view = game.observe(Side.A)
+        assert set(view.poles) == {"1", "2", "3"}
+        assert all(2 not in tower for tower in view.poles.values())
+        assert view.hand is None
+
+    def test_shared_pole_seen_by_both(self):
+        """A disk on the shared pole shows up in both views."""
+        game = Game(1)
+        game.step(Side.B, lift(Pole.B1))
+        game.step(Side.B, place(Pole.SHARED))
+        assert game.observe(Side.A).poles["2"] == (2,)
+        assert game.observe(Side.B).poles["2"] == (2,)
+
+    def test_shows_hand_and_winner(self):
+        """The view includes the side's own held disk and the winner."""
+        game = Game(1)
+        game.step(Side.A, lift(Pole.A1))
+        assert game.observe(Side.A).hand == 1
+        game.step(Side.A, place(Pole.A3))
+        assert game.observe(Side.B).winner is Side.A
+
+
 class TestPlayer:
     """`Player` is the interface for choosing an action."""
 

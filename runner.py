@@ -21,15 +21,22 @@ def run_turns(game: Game, players: dict[Side, Player], turns: Iterable[Side]) ->
     """Play `turns` in order until they run out or someone wins.
 
     Returns one log entry per turn played, with the turn number, the side,
-    the move and whether it was legal. Turns after a win are not played.
+    the move, whether it was legal and, if not, why. Turns after a win are
+    not played.
     """
     log = []
     for number, side in enumerate(turns, start=1):
         if game.winner is not None:
             break
         action = players[side].choose(game.observe(side), game.legal_actions(side))
-        legal = game.step(side, action)
-        log.append({"turn": number, "side": side.value, "move": move_text(action), "legal": legal})
+        result = game.step(side, action)
+        log.append({
+            "turn": number,
+            "side": side.value,
+            "move": move_text(action),
+            "legal": result.legal,
+            "reason": result.reason,
+        })
     return log
 
 

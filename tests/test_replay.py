@@ -62,6 +62,8 @@ class TestReplay:
         """An illegal move is logged as illegal and uses up that move."""
         result = replay({"n": 1, "turns": ["A", "A", "A"], "moves": {"A": ["place 3", "lift 1", "place 3"]}})
         assert [entry["legal"] for entry in result["log"]] == [False, True, True]
+        assert result["log"][0]["reason"] == "hand is empty"
+        assert result["log"][1]["reason"] is None
         assert result["winner"] == "A"
 
     def test_side_without_moves_skips(self):

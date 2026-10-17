@@ -148,6 +148,19 @@ class Observation:
     winner: Side | None
 
 
+@dataclass(frozen=True)
+class StepResult:
+    """The outcome of one `Game.step`.
+
+    `legal` says whether the action was applied. When it was not, `reason`
+    says why. `winner` is the winner after the step, if any.
+    """
+
+    legal: bool
+    reason: str | None = None
+    winner: Side | None = None
+
+
 class Game:
     """One game: sets up the table, checks legal moves and detects a win.
 
@@ -164,8 +177,8 @@ class Game:
             disk = Disk(size)
             self.table.board.push(VISIBLE[disk.owner][0], disk)
 
-    def is_legal(self, side: Side, action: Action) -> bool:
-        """True if `side` may take `action` now.
+    def illegal_reason(self, side: Side, action: Action) -> str | None:
+        """Why `side` may not take `action` now, or None if it may.
 
         Nothing is legal once the game is over. Skip is otherwise always
         legal. Lift needs a visible, non-empty pole and an empty hand.
@@ -173,16 +186,28 @@ class Game:
         by a larger disk.
         """
         if self.winner is not None:
-            return False
+            return "the game is over"
         if action.kind is Kind.SKIP:
-            return True
+            return None
         if action.pole not in VISIBLE[side]:
-            return False
+            return f"pole {action.pole.value} is not visible to {side.value}"
         held = self.table.hands[side]
         top = self.table.board.top(action.pole)
         if action.kind is Kind.LIFT:
-            return held is None and top is not None
-        return held is not None and (top is None or top.size > held.size)
+            if held is not None:
+                return f"hand already holds disk {held.size}"
+            if top is None:
+                return f"pole {action.pole.value} is empty"
+            return None
+        if held is None:
+            return "hand is empty"
+        if top is not None and top.size < held.size:
+            return f"disk {held.size} cannot go on smaller disk {top.size}"
+        return None
+
+    def is_legal(self, side: Side, action: Action) -> bool:
+        """True if `side` may take `action` now."""
+        return self.illegal_reason(side, action) is None
 
     def legal_actions(self, side: Side) -> list[Action]:
         """Every action `side` may take now."""
@@ -215,23 +240,25 @@ class Game:
             winner=self.winner,
         )
 
-    def step(self, side: Side, action: Action) -> bool:
-        """Apply `action` for `side` and return whether it was legal.
+    def step(self, side: Side, action: Action) -> StepResult:
+        """Apply `action` for `side` and say what happened.
 
-        An illegal action changes nothing; the turn is simply wasted. After
-        a legal action both sides are checked for a win, the actor first,
-        because an action can also complete the other side's win (for
-        example, lifting their disk off the shared pole).
+        An illegal action changes nothing; the turn is simply wasted, and
+        the result gives the reason. After a legal action both sides are
+        checked for a win, the actor first, because an action can also
+        complete the other side's win (for example, lifting their disk off
+        the shared pole).
         """
-        if not self.is_legal(side, action):
-            return False
+        reason = self.illegal_reason(side, action)
+        if reason is not None:
+            return StepResult(legal=False, reason=reason, winner=self.winner)
         if action.kind is Kind.LIFT:
             self.table.move(action.pole, side)
         elif action.kind is Kind.PLACE:
             self.table.move(side, action.pole)
         other = Side.B if side is Side.A else Side.A
         self.winner = next((s for s in (side, other) if self.has_won(s)), None)
-        return True
+        return StepResult(legal=True, winner=self.winner)
 
 
 @dataclass

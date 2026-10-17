@@ -237,22 +237,22 @@ class TestGameStep:
         """An illegal action returns False and leaves the table as it was."""
         game = Game(2)
         before = {pole: list(tower) for pole, tower in game.table.board.towers.items()}
-        assert game.step(Side.A, place(Pole.A3)) is False
+        assert game.step(Side.A, place(Pole.A3)).legal is False
         assert game.table.board.towers == before
         assert game.table.hands == {Side.A: None, Side.B: None}
 
     def test_skip_changes_nothing(self):
         """Skip is legal and leaves the table as it was."""
         game = Game(1)
-        assert game.step(Side.B, SKIP) is True
+        assert game.step(Side.B, SKIP).legal is True
         assert game.table.board.top(Pole.B1) == Disk(2)
 
     def test_example_from_brief(self):
         """N=1, turns A, B, A: A wins while B still holds disk 2."""
         game = Game(1)
-        assert game.step(Side.A, lift(Pole.A1))
-        assert game.step(Side.B, lift(Pole.B1))
-        assert game.step(Side.A, place(Pole.A3))
+        assert game.step(Side.A, lift(Pole.A1)).legal
+        assert game.step(Side.B, lift(Pole.B1)).legal
+        assert game.step(Side.A, place(Pole.A3)).legal
         assert game.winner is Side.A
         assert game.table.hands[Side.B] == Disk(2)
 
@@ -300,7 +300,10 @@ class TestGameStep:
         game = Game(1)
         game.step(Side.A, lift(Pole.A1))
         game.step(Side.A, place(Pole.A3))
-        assert game.step(Side.B, SKIP) is False
+        result = game.step(Side.B, SKIP)
+        assert result.legal is False
+        assert result.reason == "the game is over"
+        assert result.winner is Side.A
 
     def test_full_game_n2(self):
         """A plays the standard 3-move solution for two disks and wins."""
@@ -311,9 +314,47 @@ class TestGameStep:
             lift(Pole.SHARED), place(Pole.A3),
         ]
         for action in moves:
-            assert game.step(Side.A, action)
+            assert game.step(Side.A, action).legal
         assert game.table.board.towers[Pole.A3] == [Disk(3), Disk(1)]
         assert game.winner is Side.A
+
+
+class TestGameStepResult:
+    """`Game.step` explains what happened."""
+
+    def test_legal_step(self):
+        """A legal step has no reason and reports no winner mid-game."""
+        result = Game(2).step(Side.A, lift(Pole.A1))
+        assert (result.legal, result.reason, result.winner) == (True, None, None)
+
+    def test_winning_step_reports_winner(self):
+        """The step that wins carries the winner."""
+        game = Game(1)
+        game.step(Side.A, lift(Pole.A1))
+        assert game.step(Side.A, place(Pole.A3)).winner is Side.A
+
+    @pytest.mark.parametrize(
+        ("setup", "action", "reason"),
+        [
+            ([], lift(Pole.B1), "pole 1b is not visible to A"),
+            ([], lift(Pole.A3), "pole 3a is empty"),
+            ([], place(Pole.A3), "hand is empty"),
+            ([lift(Pole.A1)], lift(Pole.A1), "hand already holds disk 1"),
+            (
+                [lift(Pole.A1), place(Pole.A3), lift(Pole.A1)],
+                place(Pole.A3),
+                "disk 3 cannot go on smaller disk 1",
+            ),
+        ],
+    )
+    def test_illegal_reasons(self, setup, action, reason):
+        """Each broken rule gives its own reason."""
+        game = Game(2)
+        for earlier in setup:
+            assert game.step(Side.A, earlier).legal
+        result = game.step(Side.A, action)
+        assert result.legal is False
+        assert result.reason == reason
 
 
 class TestGameHasWon:
@@ -410,7 +451,7 @@ class TestPlayer:
         player = LastLegal(Side.A)
         action = player.choose(game.observe(player.side), game.legal_actions(player.side))
         assert action == lift(Pole.A1)
-        assert game.step(player.side, action)
+        assert game.step(player.side, action).legal
         assert game.table.hands[Side.A] == Disk(1)
 
 

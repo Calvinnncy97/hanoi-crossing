@@ -1,0 +1,8 @@
+{
+  "n": 1,
+  "turns": ["B", "B", "A", "A", "A", "A", "A", "A", "A", "A", "A", "A", "A", "B"],
+  "moves": {
+    "A": ["lift 1", "place 3", "lift 2", "place 1", "lift 3", "place 2", "place 3", "lift 1", "place 3", "lift 2", "place 3"],
+    "B": ["lift 1", "place 2", "lift 2"]
+  }
+}

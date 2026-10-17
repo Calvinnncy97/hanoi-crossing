@@ -1,0 +1,5 @@
+{
+  "n": 1,
+  "turns": ["A", "B", "A"],
+  "moves": {"A": ["lift 1", "place 3"], "B": ["lift 1"]}
+}

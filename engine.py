@@ -5,13 +5,14 @@ Data model:
 - A `Disk` is only its size. Its position is never stored on it.
 - The `Board` manages the towers: one stack of disks per `Pole`.
 - The `Table` holds the game state: the board and the disk in each hand.
-  It moves a disk between a tower and a hand when asked, without checking
-  any rules. Because the towers and hands live together here, every disk
-  is always in exactly one place.
-- The `Game` sets up the table, checks whether a move is legal, applies
-  it and checks for a win.
-- A `Player` makes the actions (lift, place, skip) for one side, through
-  the game.
+  Its one primitive, `move`, shifts a disk between a tower and a hand
+  without checking any rules. Because the towers and hands live together
+  here, every disk is always in exactly one place.
+- An `Action` is a move as data. The kinds of move (lift, place, skip) are
+  defined only here.
+- The `Game` sets up the table, checks whether an action is legal, turns
+  it into a table move and checks for a win.
+- A `Player` decides which action its side takes.
 """
 
 from __future__ import annotations
@@ -68,40 +69,38 @@ class Board:
         """Remove and return the top disk of `pole`."""
         return self.towers[pole].pop()
 
-    def where(self, disk: Disk) -> Pole | None:
-        """The pole holding `disk`, or None if it is not on any tower."""
-        for pole, tower in self.towers.items():
-            if disk in tower:
-                return pole
-        return None
-
 
 @dataclass
 class Table:
     """The board plus both players' hands.
 
-    It only manages state. `to_hand` and `to_pole` are the only ways a disk
-    moves between a tower and a hand. Neither checks game rules; `Game`
-    does that first.
+    It only manages state. `move` is the only way a disk changes place,
+    and it does not check game rules; `Game` does that first.
     """
 
     board: Board = field(default_factory=Board)
     hands: dict[Side, Disk | None] = field(default_factory=lambda: {s: None for s in Side})
 
-    def to_hand(self, side: Side, pole: Pole) -> None:
-        """Move the top disk of `pole` into `side`'s hand."""
-        self.hands[side] = self.board.pop(pole)
+    def move(self, src: Pole | Side, dst: Pole | Side) -> None:
+        """Move one disk from `src` to `dst`.
 
-    def to_pole(self, side: Side, pole: Pole) -> None:
-        """Move the disk in `side`'s hand onto `pole`."""
-        self.board.push(pole, self.hands[side])
-        self.hands[side] = None
+        A `Pole` means the top of that tower; a `Side` means that side's
+        hand.
+        """
+        if isinstance(src, Side):
+            disk, self.hands[src] = self.hands[src], None
+        else:
+            disk = self.board.pop(src)
+        if isinstance(dst, Side):
+            self.hands[dst] = disk
+        else:
+            self.board.push(dst, disk)
 
     def where(self, disk: Disk) -> Pole | Side:
         """The pole holding `disk`, or the side holding it in hand."""
-        pole = self.board.where(disk)
-        if pole is not None:
-            return pole
+        for pole, tower in self.board.towers.items():
+            if disk in tower:
+                return pole
         for side, held in self.hands.items():
             if held == disk:
                 return side
@@ -195,9 +194,9 @@ class Game:
         if not self.is_legal(side, action):
             return False
         if action.kind is Kind.LIFT:
-            self.table.to_hand(side, action.pole)
+            self.table.move(action.pole, side)
         elif action.kind is Kind.PLACE:
-            self.table.to_pole(side, action.pole)
+            self.table.move(side, action.pole)
         other = Side.B if side is Side.A else Side.A
         self.winner = next((s for s in (side, other) if self.has_won(s)), None)
         return True
@@ -205,23 +204,15 @@ class Game:
 
 @dataclass
 class Player:
-    """One side's way of acting in a game.
+    """Decides which action one side takes.
 
-    Each action goes through `Game.step`, so rules and the win check
-    always apply. Returns False when the action was illegal.
+    This is the interface every kind of player implements: a replay of
+    recorded moves, a random player, or later an RL agent. Subclasses
+    override `choose`. The caller passes the chosen action to `Game.step`.
     """
 
     side: Side
-    game: Game
 
-    def lift(self, pole: Pole) -> bool:
-        """Lift the top disk of `pole` into this player's hand."""
-        return self.game.step(self.side, Action(Kind.LIFT, pole))
-
-    def place(self, pole: Pole) -> bool:
-        """Place the held disk onto `pole`."""
-        return self.game.step(self.side, Action(Kind.PLACE, pole))
-
-    def skip(self) -> bool:
-        """Do nothing this turn."""
-        return self.game.step(self.side, Action(Kind.SKIP))
+    def choose(self, legal: list[Action]) -> Action:
+        """Pick an action, given the actions that are legal right now."""
+        raise NotImplementedError

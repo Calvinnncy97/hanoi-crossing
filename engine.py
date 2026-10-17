@@ -257,6 +257,44 @@ class Game:
             winner=self.winner,
         )
 
+    def to_dict(self) -> dict:
+        """The full game as JSON-ready data, with poles under board names (1a, 3a, 2, 1b, 3b).
+
+        Unlike `observe`, this shows everything. It is for saving, loading
+        and sending a game, not for players.
+        """
+        towers = self.table.board.towers
+        return {
+            "n": self.n,
+            "poles": {pole.value: [d.size for d in tower] for pole, tower in towers.items()},
+            "hands": {side.value: d.size if d else None for side, d in self.table.hands.items()},
+            "winner": self.winner.value if self.winner else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Game:
+        """Rebuild a game saved with `to_dict`.
+
+        Raises ValueError unless every pole and hand is listed, every disk
+        1..2n appears exactly once, and every tower gets smaller from bottom
+        to top.
+        """
+        game = cls(data["n"])
+        towers = {Pole(name): [Disk(s) for s in sizes] for name, sizes in data["poles"].items()}
+        hands = {Side(name): Disk(s) if s else None for name, s in data["hands"].items()}
+        if set(towers) != set(Pole) or set(hands) != set(Side):
+            raise ValueError("every pole and both hands must be listed")
+        sizes = [d.size for tower in towers.values() for d in tower]
+        sizes += [d.size for d in hands.values() if d is not None]
+        if sorted(sizes) != list(range(1, 2 * game.n + 1)):
+            raise ValueError(f"disks 1..{2 * game.n} must each appear exactly once")
+        for pole, tower in towers.items():
+            if any(lower.size <= upper.size for lower, upper in zip(tower, tower[1:])):
+                raise ValueError(f"pole {pole.value} must get smaller from bottom to top")
+        game.table = Table(Board(towers), hands)
+        game.winner = Side(data["winner"]) if data.get("winner") else None
+        return game
+
     def step(self, side: Side, action: Action) -> StepResult:
         """Apply `action` for `side` and say what happened.
 

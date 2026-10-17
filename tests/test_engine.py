@@ -1,6 +1,7 @@
 """Unit tests for the engine, one group per class."""
 
 import dataclasses
+import json
 
 import pytest
 
@@ -473,6 +474,68 @@ class TestGameObserve:
         assert game.observe(Side.A).hand == 1
         game.step(Side.A, place(Pole.A3))
         assert game.observe(Side.B).winner is Side.A
+
+
+class TestGameSaveLoad:
+    """`Game.to_dict` and `Game.from_dict` save and restore a full game."""
+
+    def test_start_state(self):
+        """A new game saves its setup, using board names."""
+        assert Game(1).to_dict() == {
+            "n": 1,
+            "poles": {"1a": [1], "3a": [], "2": [], "1b": [2], "3b": []},
+            "hands": {"A": None, "B": None},
+            "winner": None,
+        }
+
+    def test_round_trip_through_json(self):
+        """A game mid-play survives JSON and loads back the same."""
+        game = Game(2)
+        game.step(Side.A, lift(Pole.A1))
+        game.step(Side.B, lift(Pole.B1))
+        game.step(Side.B, place(Pole.SHARED))
+        loaded = Game.from_dict(json.loads(json.dumps(game.to_dict())))
+        assert loaded.to_dict() == game.to_dict()
+        assert loaded.observe(Side.A) == game.observe(Side.A)
+
+    def test_loaded_game_plays_on(self):
+        """A loaded game continues exactly as the original would."""
+        game = Game(1)
+        game.step(Side.A, lift(Pole.A1))
+        loaded = Game.from_dict(game.to_dict())
+        assert loaded.step(Side.A, place(Pole.A3)) == game.step(Side.A, place(Pole.A3))
+        assert loaded.winner is Side.A
+
+    def test_keeps_winner(self):
+        """A finished game loads as finished."""
+        game = Game(1)
+        game.step(Side.A, lift(Pole.A1))
+        game.step(Side.A, place(Pole.A3))
+        assert Game.from_dict(game.to_dict()).legal_actions(Side.B) == []
+
+    def test_load_does_not_share_state(self):
+        """Changing the loaded game leaves the saved data alone."""
+        data = Game(1).to_dict()
+        Game.from_dict(data).step(Side.A, lift(Pole.A1))
+        assert data["poles"]["1a"] == [1]
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            lambda d: d["poles"].pop("3b"),
+            lambda d: d["hands"].pop("B"),
+            lambda d: d["poles"]["1a"].pop(),
+            lambda d: d["poles"]["3a"].append(1),
+            lambda d: d["poles"].update({"1b": [2, 4]}),
+        ],
+        ids=["missing pole", "missing hand", "lost disk", "duplicate disk", "wrong order"],
+    )
+    def test_rejects_bad_data(self, change):
+        """Data that could not come from a real game is refused."""
+        data = Game(2).to_dict()
+        change(data)
+        with pytest.raises(ValueError):
+            Game.from_dict(data)
 
 
 class TestPlayer:

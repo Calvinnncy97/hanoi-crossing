@@ -42,7 +42,5 @@ def run_turns(game: Game, players: dict[Side, Player], turns: Iterable[Side]) ->
 
 def final_state(game: Game) -> dict:
     """Every pole and hand, using board names (1a, 3a, 2, 1b, 3b), as a JSON-ready dict."""
-    return {
-        "poles": {pole.value: [d.size for d in tower] for pole, tower in game.table.board.towers.items()},
-        "hands": {side.value: (disk.size if disk else None) for side, disk in game.table.hands.items()},
-    }
+    state = game.to_dict()
+    return {"poles": state["poles"], "hands": state["hands"]}

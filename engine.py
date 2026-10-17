@@ -2,17 +2,16 @@
 
 Data model:
 
-- A `Disk` is only its size. Its owner is derived from parity (odd is A,
-  even is B) and its position is never stored on it.
-- The `Board` is the single source of truth for where disks are. It maps
-  every `Location` (the five poles and the two hands) to a stack of disks,
-  bottom to top. `Board.move` is the only way to change it, so a disk is
-  always in exactly one place.
+- A `Disk` is only its size. Its position is never stored on it.
+- The `Board` manages the towers: one stack of disks per `Pole`.
+- The `Table` owns the board and both players' hands. It is the only place
+  disks move between towers and hands, so every disk is always in exactly
+  one place.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 
@@ -23,25 +22,19 @@ class Player(str, Enum):
     B = "B"
 
 
-class Location(str, Enum):
-    """Every place a disk can be: five poles and two hands."""
+class Pole(str, Enum):
+    """The five poles: each player's poles 1 and 3, and the shared pole 2."""
 
     A1 = "1a"
     A3 = "3a"
     SHARED = "2"
     B1 = "1b"
     B3 = "3b"
-    HAND_A = "hand_a"
-    HAND_B = "hand_b"
 
 
 @dataclass(frozen=True, order=True)
 class Disk:
-    """A disk, identified only by its size.
-
-    Disks are immutable values. Where a disk is lives on the `Board`, not
-    here, so the two can never disagree.
-    """
+    """A disk, identified only by its size."""
 
     size: int
 
@@ -53,25 +46,52 @@ class Disk:
 
 @dataclass
 class Board:
-    """Where every disk is: one stack per location, listed bottom to top.
+    """The towers: one stack per pole, listed bottom to top."""
 
-    This is the only record of disk positions. A hand is a stack that holds
-    at most one disk, so lifting and placing are both just `move`.
+    towers: dict[Pole, list[Disk]] = field(default_factory=lambda: {p: [] for p in Pole})
+
+    def push(self, pole: Pole, disk: Disk) -> None:
+        """Put `disk` on top of `pole`."""
+        self.towers[pole].append(disk)
+
+    def pop(self, pole: Pole) -> Disk:
+        """Remove and return the top disk of `pole`."""
+        return self.towers[pole].pop()
+
+    def where(self, disk: Disk) -> Pole | None:
+        """The pole holding `disk`, or None if it is not on any tower."""
+        for pole, tower in self.towers.items():
+            if disk in tower:
+                return pole
+        return None
+
+
+@dataclass
+class Table:
+    """The board plus both players' hands.
+
+    Lifting and placing are the only ways a disk moves between a tower and
+    a hand. Neither checks game rules; the rules layer does that first.
     """
 
-    stacks: dict[Location, list[Disk]]
+    board: Board = field(default_factory=Board)
+    hands: dict[Player, Disk | None] = field(default_factory=lambda: {p: None for p in Player})
 
-    def where(self, disk: Disk) -> Location:
-        """The location of `disk`, found by scanning the stacks."""
-        for loc, stack in self.stacks.items():
-            if disk in stack:
-                return loc
-        raise KeyError(f"disk {disk.size} is not on the board")
+    def lift(self, player: Player, pole: Pole) -> None:
+        """Move the top disk of `pole` into `player`'s hand."""
+        self.hands[player] = self.board.pop(pole)
 
-    def move(self, src: Location, dst: Location) -> None:
-        """Move the top disk of `src` onto `dst`.
+    def place(self, player: Player, pole: Pole) -> None:
+        """Move the disk in `player`'s hand onto `pole`."""
+        self.board.push(pole, self.hands[player])
+        self.hands[player] = None
 
-        This is the only method that changes the board. It does not check
-        game rules; the rules layer does that before calling it.
-        """
-        self.stacks[dst].append(self.stacks[src].pop())
+    def where(self, disk: Disk) -> Pole | Player:
+        """The pole holding `disk`, or the player holding it in hand."""
+        pole = self.board.where(disk)
+        if pole is not None:
+            return pole
+        for player, held in self.hands.items():
+            if held == disk:
+                return player
+        raise KeyError(f"disk {disk.size} is not on the table")

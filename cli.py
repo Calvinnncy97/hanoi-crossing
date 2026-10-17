@@ -1,9 +1,10 @@
 """Play Hanoi Crossing in the terminal as side A.
 
 The screen shows only what A can see: A's poles 1 and 3, the shared pole 2
-and A's hand. Enter the number of an action to play it, or `q` to quit.
+and A's hand, drawn as towers with Rich. Pick a move with the arrow keys
+and Enter; Ctrl-C quits.
 
-Usage: python cli.py [--n DISKS]
+Usage: uv run cli.py [--n DISKS]
 """
 
 from __future__ import annotations
@@ -11,10 +12,20 @@ from __future__ import annotations
 import argparse
 import sys
 
-from engine import VISIBLE, Action, Game, Kind, Player, Side
+import questionary
+from rich.console import Console, Group
+from rich.panel import Panel
+from rich.text import Text
+
+from engine import VISIBLE, Action, Disk, Game, Kind, Player, Pole, Side
+
+console = Console()
+
+DISK_COLOUR = {Side.A: "dodger_blue2", Side.B: "dark_orange"}
+"""Disk colours by the side that started with them: A blue, B orange."""
 
 
-def pole_names(side: Side) -> dict:
+def pole_names(side: Side) -> dict[Pole, str]:
     """Map each pole `side` can see to the name that side uses for it: "1", "2" or "3"."""
     return {pole: str(i) for i, pole in enumerate(VISIBLE[side], start=1)}
 
@@ -27,47 +38,76 @@ def describe(action: Action, side: Side) -> str:
     return f"{action.kind.value} {preposition} pole {pole_names(side)[action.pole]}"
 
 
-def render(game: Game, side: Side) -> str:
-    """The part of the table `side` can see, one line per pole plus the hand."""
-    lines = []
-    for pole, name in pole_names(side).items():
-        disks = " ".join(str(d.size) for d in game.table.board.towers[pole]) or "-"
-        label = f"pole {name}" + (" (shared)" if name == "2" else "")
-        lines.append(f"  {label:<17}| {disks}")
+def disk_text(disk: Disk) -> Text:
+    """A disk drawn as a bar, wider for bigger disks, with its size in the middle.
+
+    The bar is made of block characters, so it still reads as a disk in a
+    terminal without colour.
+    """
+    colour = DISK_COLOUR[disk.owner]
+    bar = "█" * disk.size
+    return Text.assemble((bar, colour), (str(disk.size), f"bold white on {colour}"), (bar, colour))
+
+
+def centered(content: Text, width: int) -> Text:
+    """`content` padded with spaces on both sides to `width` characters."""
+    left = (width - len(content)) // 2
+    return Text.assemble(" " * left, content, " " * (width - len(content) - left))
+
+
+def render(game: Game, side: Side, title: str) -> Panel:
+    """A panel with the three towers `side` can see and the disk in its hand.
+
+    Every tower is drawn tall enough to hold all disks in the game, so the
+    picture keeps the same size from turn to turn.
+    """
+    names = pole_names(side)
+    towers = [game.table.board.towers[pole] for pole in names]
+    height = 2 * game.n
+    width = max(2 * height + 5, 17)
+    rows = []
+    for level in range(height - 1, -1, -1):
+        cells = [
+            disk_text(tower[level]) if level < len(tower) else Text("│", style="grey50")
+            for tower in towers
+        ]
+        rows.append(Text.assemble(*(centered(cell, width) for cell in cells)))
+    base = "─" * (width // 2 - 1) + "┴" + "─" * (width - width // 2)
+    rows.append(Text.assemble(*(centered(Text(base[: width - 2], style="grey50"), width) for _ in names)))
+    labels = [f"pole {name}" + (" (shared)" if name == "2" else "") for name in names.values()]
+    rows.append(Text.assemble(*(centered(Text(label, style="bold"), width) for label in labels)))
     held = game.table.hands[side]
-    lines.append(f"  {'hand':<17}| {held.size if held else '-'}")
-    return "\n".join(lines)
+    hand = Text.assemble("Hand: ", disk_text(held) if held else Text("empty", style="grey50"))
+    return Panel(
+        Group(Text(), *rows, Text(), hand),
+        title=title,
+        subtitle="[dodger_blue2]■[/] your disks  [dark_orange]■[/] B's disks",
+        expand=False,
+        padding=(0, 2),
+    )
 
 
 class HumanPlayer(Player):
     """Asks the person at the terminal to pick from the legal actions."""
 
     def choose(self, legal: list[Action]) -> Action:
-        """Print the numbered actions and read a choice until it is valid.
+        """Show the legal actions as an arrow-key menu and return the pick.
 
-        Exits the program on `q` or end of input.
+        Exits the program if the person cancels with Ctrl-C.
         """
-        for number, action in enumerate(legal, start=1):
-            print(f"  {number}) {describe(action, self.side)}")
-        while True:
-            try:
-                answer = input("Your move: ").strip().lower()
-            except EOFError:
-                answer = "q"
-            if answer == "q":
-                print("\nBye.")
-                sys.exit(0)
-            if answer.isdigit() and 1 <= int(answer) <= len(legal):
-                return legal[int(answer) - 1]
-            print(f"  Enter a number from 1 to {len(legal)}, or q to quit.")
+        choices = [questionary.Choice(describe(action, self.side), value=action) for action in legal]
+        action = questionary.select("Your move:", choices=choices, qmark="»").ask()
+        if action is None:
+            console.print("Bye.")
+            sys.exit(0)
+        return action
 
 
 def play(game: Game, player: Player) -> Side:
     """Let `player` take every turn until someone wins."""
     turn = 1
     while game.winner is None:
-        print(f"\n--- Turn {turn} ---")
-        print(render(game, player.side))
+        console.print(render(game, player.side, f"Turn {turn} · your view"))
         game.step(player.side, player.choose(game.legal_actions(player.side)))
         turn += 1
     return game.winner
@@ -82,13 +122,11 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("--n must be at least 1")
 
     game = Game(args.n)
-    print(f"You are A with disks {', '.join(str(s) for s in range(1, 2 * args.n, 2))}.")
-    print("Win by getting every disk you can see onto your pole 3, with an empty hand.")
+    console.rule("[bold]Hanoi Crossing")
+    console.print("You are [bold dodger_blue2]A[/]. Win by getting every disk you can see onto your pole 3, with an empty hand.\n")
     winner = play(game, HumanPlayer(Side.A))
-
-    print("\n--- Final view ---")
-    print(render(game, Side.A))
-    print(f"\n{winner.value} wins.")
+    console.print(render(game, Side.A, "Final view"))
+    console.print(f"\n[bold green]{winner.value} wins![/]")
 
 
 if __name__ == "__main__":

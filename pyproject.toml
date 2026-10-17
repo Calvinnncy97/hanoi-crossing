@@ -7,12 +7,19 @@ authors = [
     { name = "Calvinn Ng", email = "calvinnncy97@gmail.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "questionary>=2.1.1",
+    "rich>=15.0.0",
+]
 
-[build-system]
-requires = ["uv_build>=0.9.26,<0.10.0"]
-build-backend = "uv_build"
+[tool.uv]
+package = false
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
